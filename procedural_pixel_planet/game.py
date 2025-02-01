@@ -27,15 +27,16 @@ mouse_radius = radius
 class Planet:
     # Function to initialise the planet
     def __init__(self, position, radius, pixels,
-                 front_vec=pg.Vector3(0, 0, 1), angle=0,
+                 pitch=0, yaw=0, roll=0,
                  light_vec=pg.Vector3(0, 0, 1)):
         
         # Set the properties
         self.position = position
         self.radius = radius
         self.shape = (pixels, pixels)
-        self.axis = pg.Vector3(np.nan, np.nan, np.nan)
-        self.angle = angle
+        self.pitch = pitch
+        self.yaw = yaw
+        self.roll = roll
 
         # Get the x and y matrices
         xs = np.linspace(-radius, radius, self.shape[0])
@@ -71,10 +72,7 @@ class Planet:
         self.normalG = normalG
 
         # Angle the planet
-        self.angle_planet(front_vec)
-
-        # Rotate the planet
-        #self.rotate_planet(angle)
+        self.angle_planet(pitch, yaw, roll)
 
         # Colour the planet
         self.colour_planet()
@@ -82,71 +80,46 @@ class Planet:
         # Light the planet
         self.light_planet(light_vec, dithering)
 
-    # Function to get the rotation matrix
-    def get_rotation_matrix(self, axis, angle):
-        # Get the rotation matrix (Rodrigues' rotation formula)
-        c = np.cos(angle)
-        s = np.sin(angle)
-        t = 1 - c
-        x, y, z = axis
-
-        # Rotation matrix, note x and y are swapped because order is (x, y, z) instead of (y, x, z)
-        rotation_matrix = np.array([
-            [t*x*y + z*s, t*y*y + c, t*y*z - x*s],
-            [t*x*x + c, t*x*y - z*s, t*x*z + y*s],
-            [t*x*z - y*s, t*y*z + x*s, t*z*z + c]
-        ])
-        
-        return rotation_matrix
-
     # Function to angle the planet
-    def angle_planet(self, front_vec):
-        # Normalise the front vector
-        front_vec = front_vec.normalize()
+    def angle_planet(self, pitch=None, yaw=None, roll=None):
+        # Get the pitch, yaw and roll
+        if pitch is None:
+            pitch = self.pitch
+        if yaw is None:
+            yaw = self.yaw
+        if roll is None:
+            roll = self.roll
+
+        # Get the pitch matrix (z-plane)
+        pitch_matrix = np.array([[np.cos(pitch), -np.sin(pitch), 0],
+                                [np.sin(pitch), np.cos(pitch), 0],
+                                [0, 0, 1]])
         
-        # Get outwards vector
-        up_vec = pg.Vector3(-front_vec.x, -front_vec.y, front_vec.z).normalize()
+        # Get the yaw matrix (y-plane)
+        yaw_matrix = np.array([[np.cos(yaw), 0, np.sin(yaw)],
+                                [0, 1, 0],
+                                [-np.sin(yaw), 0, np.cos(yaw)]])
 
-        # Get axis of rotation (cross product of forward vector and z-axis)
-        axis = up_vec.cross(pg.Vector3(0, 0, 1))
-        if axis.length() == 0:
-            axis = pg.Vector3(0, 1, 0)
-        else:
-            axis = axis.normalize()
+        # Get the roll matrix (x-plane)
+        roll_matrix = np.array([[1, 0, 0],
+                                [0, np.cos(roll), -np.sin(roll)],
+                                [0, np.sin(roll), np.cos(roll)]])
 
-        # Get the angle of rotation (dot product of forward vector and z-axis)
-        angle = np.arccos(front_vec.dot(pg.Vector3(0, 0, 1)))
-
-        # Get the rotation matrix
-        rotation_matrix = self.get_rotation_matrix(axis, angle)
+        # Combine pitch, yaw and roll matrices
+        combined_matrix = np.dot(np.dot(pitch_matrix, yaw_matrix), roll_matrix)
         
         # Rotate xG, yG and zG
-        xrotG, yrotG, zrotG = np.dot(np.dstack((self.xG, self.yG, self.zG)), rotation_matrix).T
+        xrotG, yrotG, zrotG = np.dot(np.dstack((self.yG, self.xG, self.zG)), combined_matrix).T
 
         # Set the matrice
         self.xrotG = xrotG
         self.yrotG = yrotG
         self.zrotG = zrotG
 
-        # Set the north vector
-        self.axis = axis
-        self.angle = angle
-
-    # Function to rotate the planet around the axis of rotation
-    def rotate_planet(self, angle):
-        # Get the rotation matrix
-        rotation_matrix = self.get_rotation_matrix(self.axis, angle)
-
-        # Rotate xG, yG and zG
-        xrotG, yrotG, zrotG = np.dot(np.dstack((self.xG, self.yG, self.zG)), rotation_matrix).T
-
-        # Set the matrices
-        self.xrotG = xrotG
-        self.yrotG = yrotG
-        self.zrotG = zrotG
-
-        # Set the angle
-        self.angle = angle
+        # Set the pitch, yaw and roll
+        self.pitch = pitch
+        self.yaw = yaw
+        self.roll = roll
         
     # Function to colour the planet
     def colour_planet(self):
@@ -249,19 +222,9 @@ def get_mouse_vec(mouse_radius, screen_size):
     return mouse_vec
 
 # Initialise the planet
-vec = pg.Vector3(0, 0, 1)
 planet = Planet(position, radius, pixels,
-                front_vec=vec,
-                angle=0,
-                light_vec=vec)
-print(planet.axis)
-print(planet.angle)
-
-#planet.rotate_planet(planet.angle - 0.9)
-print(planet.axis)
-print(planet.angle)
-
-planet.colour_planet()
+                pitch=0, yaw=0, roll=0,
+                light_vec=front_vec)
 
 # Plot the planet
 plot = True
@@ -318,33 +281,29 @@ while running:
     elif not keys[pg.K_d]:
         pressed_d = False
 
-    # Change mouse control
-    if keys[pg.K_m] and not pressed_m:
-        if mouse_control == 'light':
-            mouse_control = 'angle'
-        else:
-            mouse_control = 'light'
-        pressed_m = True
-    elif not keys[pg.K_m]:
-        pressed_m = False
+    # Pitch the planet (numpad 7 and 9)
+    if keys[pg.K_KP9]:
+        planet.angle_planet(pitch=planet.pitch + 0.05)
+    if keys[pg.K_KP7]:
+        planet.angle_planet(pitch=planet.pitch - 0.05)
 
-    # Get the mouse vector
-    mouse_vec = get_mouse_vec(mouse_radius, screen_size)
+    # Yaw the planet (numpad 4 and 6)
+    if keys[pg.K_KP6]:
+        planet.angle_planet(yaw=planet.yaw + 0.05)
+    if keys[pg.K_KP4]:
+        planet.angle_planet(yaw=planet.yaw - 0.05)
 
-    # Angle the planet
-    if mouse_control == 'angle':
-        planet.angle_planet(mouse_vec)
-
-    # Rotate the planet
-    angle = pg.time.get_ticks() / 1000
-    #planet.rotate_planet(angle)
+    # Roll the planet (numapd 8 and 5)
+    if keys[pg.K_KP8]:
+        planet.angle_planet(roll=planet.roll + 0.05)
+    if keys[pg.K_KP5]:
+        planet.angle_planet(roll=planet.roll - 0.05)
 
     # Colour the planet
     planet.colour_planet()
 
     # Light the planet
-    if mouse_control == 'light':
-        light_vec = mouse_vec
+    light_vec = get_mouse_vec(mouse_radius, screen_size)
     planet.light_planet(light_vec, dithering)
     
     # Quit the game by pressing 'esc'
