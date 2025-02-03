@@ -5,7 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-# NOTE: ORIENTATION AND ROTATION USE DIFFERENT AXIS SYSTEMS
+# TODO: change position and radius to be dependent on distance in 3D space. Add camera controls
+
 
 # %%
 # Planet
@@ -13,7 +14,6 @@ class Planet:
     # Initialise planet
     def __init__(self, radius, pixels,
                  position=pg.Vector2(0, 0),
-                 pitch=0, yaw=0, roll=0, # TODO: REMOVE AND REPLACE WITH ORIENTATION
                  orientation=pg.Vector3(0, 1, 0),
                  rotation_speed=pg.Vector3(0.1, 0, 0),
                  time=0, light=pg.Vector3(0, 0, 1), dithering=True):
@@ -22,10 +22,7 @@ class Planet:
         self.radius = radius
         self.shape = (pixels, pixels)
         self.position = position
-        self.pitch = pitch #TODO: REMOVE
-        self.yaw = yaw # TODO: REMOVE
-        self.roll = roll # TODO: REMOVE
-        self.orientation = orientation.normalize()
+        self.orientation = orientation
         self.rotation_speed = rotation_speed
         self.rotation = rotation_speed * time
         
@@ -35,7 +32,7 @@ class Planet:
         xG, yG = np.meshgrid(xs, ys)
 
         # Get mask matrix
-        maskG = xG**2 + yG**2 <= radius**2
+        maskG = xG**2 + yG**2 < radius**2
         
         # Get z matrix
         zG = np.sqrt(np.where(maskG, radius**2 - xG**2 - yG**2, 0))
@@ -59,8 +56,8 @@ class Planet:
         self.normalG = normalG
         self.ditherG = ditherG
 
-        # Reorient planet
-        self.reorient(pitch=pitch, yaw=yaw, roll=roll)
+        # orient planet
+        self.orient(orientation=orientation)
 
         # Rotate planet
         self.rotate(time=time, rotation_speed=rotation_speed)
@@ -71,47 +68,30 @@ class Planet:
         # Illuminate planet
         self.illuminate(light=light, dithering=dithering)
 
-    # Reorient planet
-    # TODO: should take orientation vector in future
-    # NOTE: DO NOT FORGET TO NORMALISE ORIENTATION VECTOR
-    def reorient(self, pitch=None, yaw=None, roll=None):
-        # Get pitch, yaw and roll
-        if pitch is None:
-            pitch = self.pitch
-        if yaw is None:
-            yaw = self.yaw
-        if roll is None:
-            roll = self.roll
-
-        # Get pitch, yaw and roll matrices
-        pitch_matrix = np.array([[1, 0, 0],
-                                 [0, np.cos(pitch), -np.sin(pitch)],
-                                 [0, np.sin(pitch), np.cos(pitch)]])
+    # orient planet
+    def orient(self, orientation):
+        # Get rotation matrix
+        rotation_matrix = np.array([[np.sin(orientation.x) * np.sin(orientation.y) * np.cos(orientation.z) - np.cos(orientation.x) * np.sin(orientation.z),
+                                     np.sin(orientation.x) * np.sin(orientation.y) * np.sin(orientation.z) + np.cos(orientation.x) * np.cos(orientation.z),
+                                     np.sin(orientation.x) * np.cos(orientation.y)],
+                                     [np.cos(orientation.y) * np.cos(orientation.z),
+                                     np.cos(orientation.y) * np.sin(orientation.z),
+                                     -np.sin(orientation.y)],
+                                    [np.cos(orientation.x) * np.sin(orientation.y) * np.cos(orientation.z) + np.sin(orientation.x) * np.sin(orientation.z),
+                                     np.cos(orientation.x) * np.sin(orientation.y) * np.sin(orientation.z) - np.sin(orientation.x) * np.cos(orientation.z),
+                                     np.cos(orientation.x) * np.cos(orientation.y)]])
         
-        yaw_matrix = np.array([[np.cos(yaw), 0, np.sin(yaw)],
-                               [0, 1, 0],
-                               [-np.sin(yaw), 0, np.cos(yaw)]])
-        
-        roll_matrix = np.array([[np.cos(roll), -np.sin(roll), 0],
-                                [np.sin(roll), np.cos(roll), 0],
-                                [0, 0, 1]])
+        # Rotate xG, yG and zG matrices
+        xG2, yG2, zG2 = np.dot(np.dstack((self.xG, self.yG, self.zG)), rotation_matrix).T
 
-        # Combine pitch, yaw and roll matrices
-        combined_matrix = np.dot(np.dot(pitch_matrix, yaw_matrix), roll_matrix)
-        
-        # Reorient xG, yG and zG matrices
-        xG2, yG2, zG2 = np.dot(np.dstack((self.yG, self.xG, self.zG)), combined_matrix).T
-
-        # Set reorineted matrices
+        # Set oriented matrices
         self.xG2 = xG2
         self.yG2 = yG2
         self.zG2 = zG2
 
-        # Set the pitch, yaw and roll
-        self.pitch = pitch # TODO: REPLACE
-        self.yaw = yaw # TODO: REPLACE
-        self.roll = roll # TODO: REPLACE
-
+        # Set orientation
+        self.orientation = orientation
+    
     # Rotate planet
     def rotate(self, time, rotation_speed=None):
         # Get time and rotation speed
@@ -121,28 +101,21 @@ class Planet:
         # Get rotation
         rotation = rotation_speed * time
         
-        # If rotation is zero, return oriented axes
-        if rotation.length() == 0:
-            self.xG3 = self.xG2
-            self.yG3 = self.yG2
-            self.zG3 = self.zG2
-            return
-        
         # Get rotation matrix
-        rotate_matrix = np.array([[np.cos(rotation.y) * np.cos(rotation.z),
-                                   np.cos(rotation.y) * np.sin(rotation.z),
-                                   -np.sin(rotation.y)],
-                                  [np.sin(rotation.x) * np.sin(rotation.y) * np.cos(rotation.z) - np.cos(rotation.x) * np.sin(rotation.z),
+        rotate_matrix = np.array([[np.sin(rotation.x) * np.sin(rotation.y) * np.cos(rotation.z) - np.cos(rotation.x) * np.sin(rotation.z),
                                    np.sin(rotation.x) * np.sin(rotation.y) * np.sin(rotation.z) + np.cos(rotation.x) * np.cos(rotation.z),
                                    np.sin(rotation.x) * np.cos(rotation.y)],
+                                  [np.cos(rotation.y) * np.cos(rotation.z),
+                                   np.cos(rotation.y) * np.sin(rotation.z),
+                                   -np.sin(rotation.y)],
                                   [np.cos(rotation.x) * np.sin(rotation.y) * np.cos(rotation.z) + np.sin(rotation.x) * np.sin(rotation.z),
                                    np.cos(rotation.x) * np.sin(rotation.y) * np.sin(rotation.z) - np.sin(rotation.x) * np.cos(rotation.z),
                                    np.cos(rotation.x) * np.cos(rotation.y)]])
         
         # Rotate xG, yG and zG matrices
-        xG3, yG3, zG3 = np.dot(np.dstack((self.yG2, self.xG2, self.zG2)), rotate_matrix).T
+        xG3, yG3, zG3 = np.dot(np.dstack((self.xG2, self.yG2, self.zG2)), rotate_matrix).T
 
-        # Set reoriented matrices
+        # Set oriented matrices
         self.xG3 = xG3
         self.yG3 = yG3
         self.zG3 = zG3
@@ -213,7 +186,7 @@ class Planet:
         #intensityG = np.clip(intensityG, 0, 1)
 
         # Apply dithering
-        levels = 4   # Number of rings
+        levels = 128   # Number of rings
         thres = 0.05 # Width of dither rings
         if dithering:
             # Dither ring settings
@@ -289,8 +262,8 @@ screen_size = pg.Vector2(700, 700)
 position = pg.Vector2(screen_size.x / 2, screen_size.y / 2)
 radius = 250
 pixels = 250//2
-orientation = pg.Vector3(0, 1, 0)
-rotation_speed = pg.Vector3(0, 1, 0)
+orientation = pg.Vector3(0, 0, 0)
+rotation_speed = pg.Vector3(0, 0.2, 0)
 
 # Light settings
 light = pg.Vector3(0, 0, 1)
@@ -303,10 +276,10 @@ mouse_radius = radius
 # Preview planet
 planet = Planet(radius, pixels,
                 position=position,
-                pitch=0, yaw=0, roll=0, #TODO: REMOVE
                 orientation=orientation,
                 rotation_speed=rotation_speed,
-                time=0, light=light, dithering=dithering)
+                time=0.01, light=light, dithering=dithering)
+planet.orient(orientation=orientation)
 
 # Plot planet
 fig, ax = plt.subplots(1, 1, figsize=(6, 6))
@@ -336,6 +309,7 @@ pg.init()
 
 # Initialise the screen
 screen = pg.display.set_mode(screen_size)
+#screen = pg.display.set_mode((0, 0), pg.FULLSCREEN)
 
 # Initialise the clock
 clock = pg.time.Clock()
@@ -365,25 +339,22 @@ while running:
         pressed_d = True
     elif not keys[pg.K_d]:
         pressed_d = False
-
-    # TODO: REPLACE THIS PART WITH VECTOR
-    # Pitch planet
+    
+    # Orient planet
+    orientation = planet.orientation
     if keys[pg.K_KP8]:
-        planet.reorient(pitch=planet.pitch + 0.05)
+        orientation.x -= 0.1
     if keys[pg.K_KP5]:
-        planet.reorient(pitch=planet.pitch - 0.05)
-
-    # Yaw planet
+        orientation.x += 0.1
     if keys[pg.K_KP6]:
-        planet.reorient(yaw=planet.yaw + 0.05)
+        orientation.y -= 0.1
     if keys[pg.K_KP4]:
-        planet.reorient(yaw=planet.yaw - 0.05)
-
-    # Roll planet
-    if keys[pg.K_KP9]:
-        planet.reorient(roll=planet.roll + 0.05)
+        orientation.y += 0.1
     if keys[pg.K_KP7]:
-        planet.reorient(roll=planet.roll - 0.05)
+        orientation.z -= 0.1
+    if keys[pg.K_KP9]:
+        orientation.z += 0.1
+    planet.orient(orientation=orientation)
 
     # Get time in seconds
     time = pg.time.get_ticks() / 1000
@@ -392,7 +363,7 @@ while running:
     mouse = get_mouse_vec(mouse_radius=mouse_radius, screen_size=screen_size)
 
     # Clear screen
-    screen.fill(pg.Color('black'))
+    screen.fill(pg.Color('grey'))
 
     # Draw planet
     planet.draw(screen=screen, time=time, light=mouse, dithering=dithering)
@@ -401,6 +372,10 @@ while running:
     fps = int(clock.get_fps())
     fps_text = font.render(f"FPS: {fps}", True, pg.Color('white'))
     screen.blit(fps_text, (10, 10))
+
+    # Draw time counter
+    time_text = font.render(f"Time: {time:.2f}", True, pg.Color('white'))
+    screen.blit(time_text, (10, 50))
     
     # Update display
     pg.display.flip()
