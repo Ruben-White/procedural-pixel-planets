@@ -13,7 +13,7 @@ import os
 class Planet:
     # Initialise planet
     def __init__(self, radius, pixels,
-                 position=pg.Vector2(0, 0),
+                 position=pg.Vector3(0, 0, 0),
                  orientation=pg.Vector3(0, 1, 0),
                  rotation_speed=pg.Vector3(0.1, 0, 0),
                  time=0, light=pg.Vector3(0, 0, 1), dithering=True):
@@ -21,9 +21,10 @@ class Planet:
         # Set planet properties
         self.radius = radius
         self.shape = (pixels, pixels)
+        
         self.position = position
-        self.orientation = orientation
-        self.rotation_speed = rotation_speed
+        self.orientation = orientation       
+        self.rotation_speed = rotation_speed 
         self.rotation = rotation_speed * time
         
         # Get x and y matrices
@@ -37,9 +38,8 @@ class Planet:
         # Get z matrix
         zG = np.sqrt(np.where(maskG, radius**2 - xG**2 - yG**2, 0))
 
-        # Get the normal matrix (unit vectors)
-        normalG = np.dstack((xG, yG, zG))
-        normalG = normalG / np.linalg.norm(normalG, axis=2, keepdims=True)
+        # Get normal matrix
+        normalG1 = np.dstack((xG, yG, zG))
 
         # Get the dithering matrix
         dithers = np.zeros((len(xs), len(ys)), dtype=bool)
@@ -49,11 +49,8 @@ class Planet:
         ditherG = dithers.reshape(len(xs), len(ys))
 
         # Set matrices
-        self.xG = xG
-        self.yG = yG
-        self.zG = zG
+        self.normalG1 = normalG1
         self.maskG = maskG
-        self.normalG = normalG
         self.ditherG = ditherG
 
         # orient planet
@@ -71,24 +68,25 @@ class Planet:
     # orient planet
     def orient(self, orientation):
         # Get rotation matrix
-        rotation_matrix = np.array([[np.sin(orientation.x) * np.sin(orientation.y) * np.cos(orientation.z) - np.cos(orientation.x) * np.sin(orientation.z),
-                                     np.sin(orientation.x) * np.sin(orientation.y) * np.sin(orientation.z) + np.cos(orientation.x) * np.cos(orientation.z),
-                                     np.sin(orientation.x) * np.cos(orientation.y)],
-                                     [np.cos(orientation.y) * np.cos(orientation.z),
-                                     np.cos(orientation.y) * np.sin(orientation.z),
-                                     -np.sin(orientation.y)],
-                                    [np.cos(orientation.x) * np.sin(orientation.y) * np.cos(orientation.z) + np.sin(orientation.x) * np.sin(orientation.z),
-                                     np.cos(orientation.x) * np.sin(orientation.y) * np.sin(orientation.z) - np.sin(orientation.x) * np.cos(orientation.z),
-                                     np.cos(orientation.x) * np.cos(orientation.y)]])
+        rotation_matrix_x = np.array([[1, 0, 0],
+                                      [0, np.cos(orientation.x), -np.sin(orientation.x)],
+                                      [0, np.sin(orientation.x), np.cos(orientation.x)]])
+        rotation_matrix_y = np.array([[np.cos(orientation.y), 0, np.sin(orientation.y)],
+                                      [0, 1, 0],
+                                      [-np.sin(orientation.y), 0, np.cos(orientation.y)]])
+        rotation_matrix_z = np.array([[np.cos(orientation.z), -np.sin(orientation.z), 0],
+                                      [np.sin(orientation.z), np.cos(orientation.z), 0],
+                                      [0, 0, 1]])
+        rotation_matrix = np.dot(rotation_matrix_x, np.dot(rotation_matrix_y, rotation_matrix_z))
         
-        # Rotate xG, yG and zG matrices
-        xG2, yG2, zG2 = np.dot(np.dstack((self.xG, self.yG, self.zG)), rotation_matrix).T
-
+        # Rotate normal matrix
+        normalV1 = self.normalG1.reshape(-1, 3).T                      # Get normal matrix as vector
+        normalV2 = np.dot(rotation_matrix, normalV1)                   # Rotate normal vector
+        normalG2 = normalV2.T.reshape(self.shape[0], self.shape[1], 3) # Reshape normal vector to matrix
+        
         # Set oriented matrices
-        self.xG2 = xG2
-        self.yG2 = yG2
-        self.zG2 = zG2
-
+        self.normalG2 = normalG2
+        
         # Set orientation
         self.orientation = orientation
     
@@ -102,24 +100,25 @@ class Planet:
         rotation = rotation_speed * time
         
         # Get rotation matrix
-        rotate_matrix = np.array([[np.sin(rotation.x) * np.sin(rotation.y) * np.cos(rotation.z) - np.cos(rotation.x) * np.sin(rotation.z),
-                                   np.sin(rotation.x) * np.sin(rotation.y) * np.sin(rotation.z) + np.cos(rotation.x) * np.cos(rotation.z),
-                                   np.sin(rotation.x) * np.cos(rotation.y)],
-                                  [np.cos(rotation.y) * np.cos(rotation.z),
-                                   np.cos(rotation.y) * np.sin(rotation.z),
-                                   -np.sin(rotation.y)],
-                                  [np.cos(rotation.x) * np.sin(rotation.y) * np.cos(rotation.z) + np.sin(rotation.x) * np.sin(rotation.z),
-                                   np.cos(rotation.x) * np.sin(rotation.y) * np.sin(rotation.z) - np.sin(rotation.x) * np.cos(rotation.z),
-                                   np.cos(rotation.x) * np.cos(rotation.y)]])
+        rotation_matrix_x = np.array([[1, 0, 0],
+                                      [0, np.cos(rotation.x), -np.sin(rotation.x)],
+                                      [0, np.sin(rotation.x), np.cos(rotation.x)]])
+        rotation_matrix_y = np.array([[np.cos(rotation.y), 0, np.sin(rotation.y)],
+                                      [0, 1, 0],
+                                      [-np.sin(rotation.y), 0, np.cos(rotation.y)]])
+        rotation_matrix_z = np.array([[np.cos(rotation.z), -np.sin(rotation.z), 0],
+                                      [np.sin(rotation.z), np.cos(rotation.z), 0],
+                                      [0, 0, 1]])
+        rotate_matrix = np.dot(rotation_matrix_x, np.dot(rotation_matrix_y, rotation_matrix_z))
         
         # Rotate xG, yG and zG matrices
-        xG3, yG3, zG3 = np.dot(np.dstack((self.xG2, self.yG2, self.zG2)), rotate_matrix).T
-
+        normalV2 = self.normalG2.reshape(-1, 3).T                      # Get normal matrix as vector
+        normalV3 = np.dot(rotate_matrix, normalV2)                     # Rotate normal vector
+        normalG3 = normalV3.T.reshape(self.shape[0], self.shape[1], 3) # Reshape normal vector to matrix
+        
         # Set oriented matrices
-        self.xG3 = xG3
-        self.yG3 = yG3
-        self.zG3 = zG3
-
+        self.normalG3 = normalG3
+        
         # Set rotation speed and rotation
         self.rotation_speed = rotation_speed
         self.rotation = rotation
@@ -131,41 +130,45 @@ class Planet:
         colourG = np.zeros(self.shape + (4,))
         if colour_type == 'red':
             colourG[:, :, 0] = 255
-        elif colour_type == 'normal':
-            colourG[:, :, 0] = np.interp(self.normalG[:, :, 0], (-1, 1), (0, 255))
-            colourG[:, :, 1] = np.interp(self.normalG[:, :, 1], (-1, 1), (0, 255))
-            colourG[:, :, 2] = np.interp(self.normalG[:, :, 2], (-1, 1), (0, 255))
+        elif colour_type == 'normal1':
+            normalG = self.normalG1 / np.linalg.norm(self.normalG1, axis=2, keepdims=True)
+            colourG[:, :, 0] = np.interp(normalG[:, :, 0], (-1, 1), (0, 255))
+            colourG[:, :, 1] = np.interp(normalG[:, :, 1], (-1, 1), (0, 255))
+            colourG[:, :, 2] = np.interp(normalG[:, :, 2], (-1, 1), (0, 255))
         elif colour_type == 'normal2':
-            normalG2 = np.dstack((self.xG2, self.yG2, self.zG2))
-            normalG2 = normalG2 / np.linalg.norm(normalG2, axis=2, keepdims=True)
-            colourG[:, :, 0] = np.interp(normalG2[:, :, 0], (-1, 1), (0, 255))
-            colourG[:, :, 1] = np.interp(normalG2[:, :, 1], (-1, 1), (0, 255))
-            colourG[:, :, 2] = np.interp(normalG2[:, :, 2], (-1, 1), (0, 255))
+            normalG = self.normalG2 / np.linalg.norm(self.normalG2, axis=2, keepdims=True)
+            colourG[:, :, 0] = np.interp(normalG[:, :, 0], (-1, 1), (0, 255))
+            colourG[:, :, 1] = np.interp(normalG[:, :, 1], (-1, 1), (0, 255))
+            colourG[:, :, 2] = np.interp(normalG[:, :, 2], (-1, 1), (0, 255))
         elif colour_type == 'normal3':
-            normalG3 = np.dstack((self.xG3, self.yG3, self.zG3))
-            normalG3 = normalG3 / np.linalg.norm(normalG3, axis=2, keepdims=True)
-            colourG[:, :, 0] = np.interp(normalG3[:, :, 0], (-1, 1), (0, 255))
-            colourG[:, :, 1] = np.interp(normalG3[:, :, 1], (-1, 1), (0, 255))
-            colourG[:, :, 2] = np.interp(normalG3[:, :, 2], (-1, 1), (0, 255))
-        elif colour_type == 'quadrants':
-            colourG[:, :, 0] = np.where(self.xG > 0, 255, 0)
-            colourG[:, :, 1] = np.where(self.yG > 0, 255, 0)
-            colourG[:, :, 2] = np.where(self.zG > 0, 255, 0)
+            normalG = self.normalG3 / np.linalg.norm(self.normalG3, axis=2, keepdims=True)
+            colourG[:, :, 0] = np.interp(normalG[:, :, 0], (-1, 1), (0, 255))
+            colourG[:, :, 1] = np.interp(normalG[:, :, 1], (-1, 1), (0, 255))
+            colourG[:, :, 2] = np.interp(normalG[:, :, 2], (-1, 1), (0, 255))
+        elif colour_type == 'quadrants1':
+            normalG = self.normalG1 / np.linalg.norm(self.normalG1, axis=2, keepdims=True)
+            colourG[:, :, 0] = np.where(normalG > 0, 255, 0)
+            colourG[:, :, 1] = np.where(normalG > 0, 255, 0)
+            colourG[:, :, 2] = np.where(normalG > 0, 255, 0)
         elif colour_type == 'quadrants2':
-            colourG[:, :, 0] = np.where(self.xG2 > 0, 255, 0)
-            colourG[:, :, 1] = np.where(self.yG2 > 0, 255, 0)
-            colourG[:, :, 2] = np.where(self.zG2 > 0, 255, 0)
+            normalG = self.normalG2 / np.linalg.norm(self.normalG2, axis=2, keepdims=True)
+            colourG[:, :, 0] = np.where(normalG > 0, 255, 0)
+            colourG[:, :, 1] = np.where(normalG > 0, 255, 0)
+            colourG[:, :, 2] = np.where(normalG > 0, 255, 0)
         elif colour_type == 'quadrants3':
-            colourG[:, :, 0] = np.where(self.xG3 > 0, 255, 0)
-            colourG[:, :, 1] = np.where(self.yG3 > 0, 255, 0)
-            colourG[:, :, 2] = np.where(self.zG3 > 0, 255, 0)
-        else:
-            colourG[:, :, 0] = np.where(self.xG3 > 0, 255*0.5, 0)
-            colourG[:, :, 1] = np.where(self.yG3 > 0, 255*0.5, 0)
-            colourG[:, :, 2] = np.where(self.zG3 > 0, 255*0.5, 0)
-            colourG[:, :, 0] = np.where(self.xG2 > self.radius*0.8, 255, colourG[:, :, 0])
-            colourG[:, :, 1] = np.where(self.yG2 > self.radius*0.8, 255, colourG[:, :, 1])
-            colourG[:, :, 2] = np.where(self.zG2 > self.radius*0.8, 255, colourG[:, :, 2])
+            normalG = self.normalG3 / np.linalg.norm(self.normalG3, axis=2, keepdims=True)
+            colourG[:, :, 0] = np.where(normalG > 0, 255, 0)
+            colourG[:, :, 1] = np.where(normalG > 0, 255, 0)
+            colourG[:, :, 2] = np.where(normalG > 0, 255, 0)
+        elif colour_type == 'debug':
+            normalG2 = self.normalG2 / np.linalg.norm(self.normalG2, axis=2, keepdims=True)
+            normalG3 = self.normalG3 / np.linalg.norm(self.normalG3, axis=2, keepdims=True)
+            colourG[:, :, 0] = np.where(normalG3[:, :, 0] > 0, 255*0.5, 0)
+            colourG[:, :, 1] = np.where(normalG3[:, :, 1] > 0, 255*0.5, 0)
+            colourG[:, :, 2] = np.where(normalG3[:, :, 2] > 0, 255*0.5, 0)
+            colourG[:, :, 0] = np.where(normalG2[:, :, 0] > 0.8, 255, colourG[:, :, 0])
+            colourG[:, :, 1] = np.where(normalG2[:, :, 1] > 0.8, 255, colourG[:, :, 1])
+            colourG[:, :, 2] = np.where(normalG2[:, :, 2] > 0.8, 255, colourG[:, :, 2])
         
         # Set the alpha channel of the colour matrix
         colourG[:, :, 3] = np.where(self.maskG, 255, 0)
@@ -178,8 +181,11 @@ class Planet:
         # Normalize light vector
         light = light.normalize()
 
+        # Normalize normal vector
+        normalG = self.normalG1 / np.linalg.norm(self.normalG1, axis=2, keepdims=True)
+
         # Calculate light intensity
-        intensityG = np.dot(self.normalG, light)
+        intensityG = np.dot(normalG, light)
 
         # Normalize light intensity
         intensityG = (intensityG + 1) / 2
@@ -263,7 +269,7 @@ position = pg.Vector2(screen_size.x / 2, screen_size.y / 2)
 radius = 250
 pixels = 250//2
 orientation = pg.Vector3(0, 0, 0)
-rotation_speed = pg.Vector3(0, 0.2, 0)
+rotation_speed = pg.Vector3(0, 2*np.pi/10, 0)
 
 # Light settings
 light = pg.Vector3(0, 0, 1)
@@ -279,7 +285,6 @@ planet = Planet(radius, pixels,
                 orientation=orientation,
                 rotation_speed=rotation_speed,
                 time=0.01, light=light, dithering=dithering)
-planet.orient(orientation=orientation)
 
 # Plot planet
 fig, ax = plt.subplots(1, 1, figsize=(6, 6))
@@ -291,15 +296,13 @@ ax.set_aspect('equal')
 ax.set_facecolor('grey')
 
 # Plot axes
-fig, axs= plt.subplots(3, 3, figsize=(12, 4))
-axs = axs.flatten()
-for ax, _G in zip(axs, [planet.xG, planet.yG, planet.zG,
-                        planet.xG2, planet.yG2, planet.zG2,
-                        planet.xG3, planet.yG3, planet.zG3]):
-    p = ax.imshow(_G)
-    fig.colorbar(p, ax=ax)
-    ax.set_aspect('equal')
-    ax.set_facecolor('grey')
+fig, axs= plt.subplots(3, 3, figsize=(6, 4))
+for axs_, normalG in zip(axs, [planet.normalG1, planet.normalG2, planet.normalG3]):
+    for ax, i in zip(axs_, range(3)):
+        p = ax.imshow(normalG[:, :, i])
+        fig.colorbar(p, ax=ax)
+        ax.set_aspect('equal')
+        ax.set_facecolor('grey')
 fig.tight_layout()
 
 # %%
@@ -350,9 +353,9 @@ while running:
         orientation.y -= 0.1
     if keys[pg.K_KP4]:
         orientation.y += 0.1
-    if keys[pg.K_KP7]:
-        orientation.z -= 0.1
     if keys[pg.K_KP9]:
+        orientation.z -= 0.1
+    if keys[pg.K_KP7]:
         orientation.z += 0.1
     planet.orient(orientation=orientation)
 
